@@ -1,7 +1,7 @@
 apiVersion: template.openshift.io/v1
 kind: Template
 metadata:
-  name: ${APPLICATION_NAME}
+  name: spring-boot-dev-template
 objects:
   - apiVersion: v1
     kind: ServiceAccount
@@ -43,9 +43,8 @@ objects:
       strategy:
         sourceStrategy:
           from:
-            kind: ImageStreamTag
+            kind: DockerImage
             name: ${BASE_IMAGE}
-            namespace: ${BASE_IMAGE_NAMESPACE}
         type: Source
 
   - apiVersion: apps.openshift.io/v1
@@ -121,8 +120,6 @@ objects:
                 defaultMode: 420
                 name: ${APPLICATION_NAME}-config
               name: ${APPLICATION_NAME}-config-vol
-      triggers:
-        - type: ConfigChange
 
   - apiVersion: route.openshift.io/v1
     kind: Route
@@ -165,11 +162,7 @@ parameters:
     name: APPLICATION_NAME
     required: true
     value: basket
-  - description: Base Docker image namespace.
-    name: BASE_IMAGE_NAMESPACE
-    required: true
-    value: "openshift"
   - description: Base Docker image.
     name: BASE_IMAGE
     required: true
-    value: "redhat-openjdk18-openshift:1.4"
+    value: "registry.access.redhat.com/redhat-openjdk-18/openjdk18-openshift:1.5"

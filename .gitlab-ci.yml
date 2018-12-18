@@ -4,11 +4,15 @@ stages:
 - cache
 - build
 - test
-- nexus
+- deploy_to_nexus
 - deploy_to_dev
 
 variables:
-  APP: inventory
+  GROUPID: org.jnd.microservices
+  ARTIFACTID: inventory
+  VERSION: 0.0.1-SNAPSHOT
+  PACKAGING: jar
+
   MAVEN_CLI_OPTS: "-s settings.xml --batch-mode"
   MAVEN_OPTS: "-Dmaven.repo.local=.m2/repository"
   OPENSHIFT_SERVER: openshift.default.svc.cluster.local
@@ -32,31 +36,46 @@ test:
   script:
   - mvn $MAVEN_CLI_OPTS test
 
-nexus:
-  stage: nexus
+deploy_to_nexus:
+  stage: deploy_to_nexus
   script:
   - mvn $MAVEN_CLI_OPTS deploy
+
 
 .deploy: &deploy
   before_script:
   - oc login "$OPENSHIFT_SERVER" --token="$OPENSHIFT_TOKEN" --insecure-skip-tls-verify
   - oc project "$OPENSHIFT_PROJECT"
   script:
-  - oc delete all -l app=$APP 2> /dev/null
-  - oc new-app . --name=$APP --strategy=docker
-  - sleep 3s && oc start-build $APP --from-dir=. --follow
-  - oc expose service $APP --hostname=$APP_HOST
+  - "mvn -B -q -s settings.xml dependency:copy -DstripVersion=true -Dartifact=$GROUPID:$ARTIFACTID:$VERSION:$PACKAGING -DoutputDirectory=."
 
+  - rm -rf .m2/repository/org/jnd/microservices/inventory/0.0.1-SNAPSHOT
+
+  - cp $(find . -type f -name $ARTIFACTID-*.$PACKAGING) $ARTIFACTID-$VERSION.$PACKAGING
+
+  - oc start-build $APP --from-file=$ARTIFACTID-$VERSION.$PACKAGING --follow
+
+  - oc rollout pause dc/$ARTIFACTID 2>/dev/null
+
+  - oc set image dc/$ARTIFACTID $ARTIFACTID=docker-registry.default.svc:5000/$OPENSHIFT_PROJECT/$ARTIFACTID:latest
+
+  - oc delete configmap $ARTIFACTID-config --ignore-not-found=true
+
+  - oc create configmap $ARTIFACTID-config --from-file=src/main/resources/config.dev.properties
+
+  - oc rollout resume dc/$ARTIFACTID
+
+  - oc rollout latest dc/$ARTIFACTID
 
 deploy_to_dev:
   <<: *deploy
   stage: deploy_to_dev
   variables:
     APP: inventory
-    APP_HOST: $APP-$OPENSHIFT_PROJECT.$OPENSHIFT_DOMAIN
+    APP_HOST: $ARTIFACTID-$OPENSHIFT_PROJECT.$OPENSHIFT_DOMAIN
   environment:
     name: staging
-    url: http://$APP-$OPENSHIFT_PROJECT.$OPENSHIFT_DOMAIN
+    url: http://$ARTIFACTID-$OPENSHIFT_PROJECT.$OPENSHIFT_DOMAIN
   only:
   - master
 
